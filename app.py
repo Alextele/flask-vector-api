@@ -1,7 +1,7 @@
 from flask import Flask, request, jsonify
 import torch
 from transformers import BertTokenizer, BertModel
-# import config
+import config
 
 app = Flask(__name__)
 
@@ -33,4 +33,4 @@ def vector_endpoint():
     return jsonify({'vector': vector})
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host=config.HOST, port=config.PORT, debug=True)
