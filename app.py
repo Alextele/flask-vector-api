@@ -1,70 +1,87 @@
 from flask import Flask, request, jsonify
+from transformers import AutoTokenizer, AutoModel
 import torch
-from transformers import BertTokenizer, BertModel, AutoTokenizer, AutoModelForCausalLM
+from llama_cpp import Llama
 import config
 
 app = Flask(__name__)
 
-# Инициализация BERT токенизатора и модели для векторизации
-tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
-model = BertModel.from_pretrained('bert-base-uncased')
+# Для /vector
+tokenizer = AutoTokenizer.from_pretrained("cointegrated/rubert-tiny")
+model = AutoModel.from_pretrained("cointegrated/rubert-tiny")
 
-# Инициализация DialoGPT токенизатора и модели для генерации
-dialogpt_model_name = "tinkoff-ai/ruDialoGPT-medium"
-dialogpt_tokenizer = AutoTokenizer.from_pretrained(dialogpt_model_name)
-dialogpt_model = AutoModelForCausalLM.from_pretrained(dialogpt_model_name)
-dialogpt_model.eval()
+# Для /generate
+llm = Llama(
+    model_path="models/saiga_yandexgpt_8b.Q4_K_M.gguf",  # Обновлённое имя модели
+    n_ctx=8192,
+    n_parts=1,
+    verbose=True,
+)
+
+DEFAULT_SYSTEM_PROMPT = "Ты — Сайга, русскоязычный автоматический ассистент. Ты разговариваешь с людьми и помогаешь им."
+
 
 def get_vector(question):
-    # Токенизация вопроса
     inputs = tokenizer(question, return_tensors='pt', padding=True, truncation=True)
-
-    # Получение выходных данных из модели
     with torch.no_grad():
         outputs = model(**inputs)
+    vector = outputs.last_hidden_state.mean(dim=1).squeeze().numpy()
+    return vector.tolist()
 
-    # Получаем вектор вопроса (используем вектор [CLS])
-    vector = outputs.last_hidden_state[:, 0, :].squeeze().numpy()
-    return vector.tolist()  # Преобразуем в список для JSON
 
 @app.route('/vector', methods=['POST'])
 def vector_endpoint():
     data = request.json
     question = data.get('question')
-
     if not question:
         return jsonify({'error': 'Question is required!'}), 400
-
     vector = get_vector(question)
     return jsonify({'vector': vector})
+
 
 @app.route('/generate', methods=['POST'])
 def generate_endpoint():
     data = request.get_json()
     question = data.get("question", "")
-    context_list = data.get("context", [])
-    max_length = data.get("max_length", 300)
-    top_p = data.get("top_p", 0.95)
-    top_k = data.get("top_k", 50)
+    context = data.get("context", [])
+    system_prompt = data.get("system_prompt", DEFAULT_SYSTEM_PROMPT)
 
-    prompt = "Контекст:\n"
-    for idx, entry in enumerate(context_list):
-        prompt += f"{idx+1}. {entry}\n"
-    prompt += f"\nВопрос: {question}\nОтвет:"
+    # Параметры генерации с возможностью переопределения
+    temperature = data.get("temperature", 0.6)
+    top_k = data.get("top_k", 30)
+    top_p = data.get("top_p", 0.9)
+    repeat_penalty = data.get("repeat_penalty", 1.1)
+    max_tokens = data.get("max_tokens", 512)
+    stop = data.get("stop", None)
 
-    input_ids = dialogpt_tokenizer.encode(prompt, return_tensors="pt")
-    with torch.no_grad():
-        output = dialogpt_model.generate(
-            input_ids,
-            max_length=max_length,
-            do_sample=True,
-            top_p=top_p,
-            top_k=top_k,
-            pad_token_id=dialogpt_tokenizer.eos_token_id
-        )
+    if not question:
+        return jsonify({'error': 'Question is required!'}), 400
 
-    reply = dialogpt_tokenizer.decode(output[:, input_ids.shape[-1]:][0], skip_special_tokens=True)
+    if context:
+        context_text = "\n- " + "\n- ".join(context)
+        user_message = f"Контекст:{context_text}\n\nВопрос: {question}"
+    else:
+        user_message = question
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_message},
+    ]
+
+    result = llm.create_chat_completion(
+        messages=messages,
+        temperature=temperature,
+        top_k=top_k,
+        top_p=top_p,
+        repeat_penalty=repeat_penalty,
+        max_tokens=max_tokens,
+        stop=stop,
+        stream=False
+    )
+
+    reply = result["choices"][0]["message"]["content"].strip()
     return jsonify({"reply": reply})
+
 
 if __name__ == '__main__':
     app.run(host=config.HOST, port=config.PORT, debug=True)

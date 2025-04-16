@@ -1,4 +1,6 @@
-Flask
-torch
-transformers
-hf_xet
+Flask>=2.0.0
+torch>=1.10.0
+transformers>=4.20.0
+sentencepiece>=0.1.96
+accelerate>=0.12.0
+llama-cpp-python>=0.2.24
