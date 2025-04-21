@@ -58,8 +58,12 @@ def generate_endpoint():
         return jsonify({'error': 'Question is required!'}), 400
 
     if context:
-        context_text = "\n- " + "\n- ".join(context)
-        user_message = f"Контекст:{context_text}\n\nВопрос: {question}"
+        first = context[0]
+        rest = context[1:] if len(context) > 1 else []
+        context_text = f"Обязательно начни ответ с этой информации: {first}"
+        if rest:
+            context_text += "\nПродолжи, используя эту информацию:\n- " + "\n- ".join(rest) + "\nВажно: Не используй более никакой информации при формировании ответа!"
+        user_message = f"{context_text}\n\nВопрос: {question}"
     else:
         user_message = question
 
