@@ -43,7 +43,6 @@ def vector_endpoint():
 def generate_endpoint():
     data = request.get_json()
     question = data.get("question", "")
-    context = data.get("context", [])
     system_prompt = data.get("system_prompt", DEFAULT_SYSTEM_PROMPT)
 
     # Параметры генерации с возможностью переопределения
@@ -57,39 +56,7 @@ def generate_endpoint():
     if not question:
         return jsonify({'error': 'Question is required!'}), 400
 
-    if context:
-        first = context[0]
-        rest = context[1:] if len(context) > 1 else []
-
-        context_text = (
-            "Отвечай строго по приведённым утверждениям. Не искажай смысл.\n\n"
-            f"1. Начало ответа должно передавать смысл следующего утверждения: \"{first}\"\n"
-        )
-
-        if rest:
-            context_text += (
-                    "2. Далее последовательно используй следующие утверждения, если они соответствуют вопросу:\n"
-                    + "\n".join(f"- {item}" for item in rest)
-            )
-
-        context_text += (
-            "\n\n Жёсткие правила:\n"
-            "- Не используй внешнюю информацию.\n"
-            "- Не добавляй других слов и знаний.\n"
-            "- Каждое утверждение несёт самостоятельный смысл.\n"
-            "- Не мешай уверждения между собой в общие фразы. Одно утверждение - одно предложение в ответе.\n"
-            "- Не объединяй утверждения для формирования ответа.\n"
-            "- В ответе используй последовательно каждое утверждение, если оно несет в себе уникальный смысл.\n"
-            "- Не придумывай, не дополняй, не обобщай.\n"
-            "- Не делай предположений.\n"
-            "- Не используй форматирование (жирный, курсив, Markdown и т.п.) в ответах.\n"
-            "- Отвечай кратко, не делая выводов, и не добавляя от себя ничего."
-        )
-
-        user_message = f"{context_text}\nВопрос: {question}"
-    else:
-        user_message = question
-
+    user_message = question
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_message},
